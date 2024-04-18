@@ -3,6 +3,7 @@ import torch.nn as nn
 import pandas as pd
 import numpy as np
 
+
 class PortfolioSVM(nn.Module):
     def __init__(self, n_assets):
         super(PortfolioSVM, self).__init__()
@@ -13,7 +14,7 @@ class PortfolioSVM(nn.Module):
         return torch.sigmoid(torch.matmul(x, self.weights))  # Apply sigmoid to scale outputs between 0 and 1
 
 # Example Data: Assuming 'returns' and 'risk' are columns in your data
-data_path = 'path_to_your_data.xlsx'
+data_path = 'esg1.xlsx'
 df = pd.read_excel(data_path)
 returns = df['returns'].values
 risk = df['risk'].values
