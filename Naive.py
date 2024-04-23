@@ -1,44 +1,53 @@
 import pandas as pd
 import numpy as np
-from scipy.optimize import minimize
 
+# Load your data
+data = pd.read_excel('esg1.xlsx')  # Adjust this to your file path
+data.columns = data.columns.str.strip()
 
-data = pd.read_excel('Book6.xlsx', skiprows=[0], index_col=0)  # Adjust for your actual data source
-print(data)
+# Calculate daily and annual metrics
+daily_returns = data
+annual_returns = daily_returns.mean() * 252
+annual_std_dev = daily_returns.std() * np.sqrt(252)
 
+# Apply equal weights
+num_assets = len(daily_returns.columns)
+equal_weights = np.array([1 / num_assets] * num_assets)
 
-average_returns = data.mean()
-std_devs = data.std()
+# Portfolio metrics
+portfolio_return = np.dot(equal_weights, annual_returns)
+portfolio_volatility = np.sqrt(np.dot(equal_weights.T, np.dot(daily_returns.cov() * 252, equal_weights)))
 
-num_assets = len(data.columns)
-weights = np.ones(num_assets) / num_assets
+# Risk-free rate
+risk_free_rate = 0.05666
 
-
-portfolio_return = np.dot(weights, average_returns) * 252
-portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(data.cov(), weights)))
-risk_free_rate = 0.06098  # Define according to your context
+# Sharpe Ratio
 sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
 
-def downside_deviation(returns, target=0):
-    return np.sqrt(np.mean(np.minimum(0, returns - target) ** 2))
+# Mean Downside Standard Deviation
+downside_returns = daily_returns[daily_returns < 0].fillna(0)
+mean_downside_std_dev = np.sqrt(np.dot(equal_weights.T, np.dot(downside_returns.cov() * 252, equal_weights)))
 
-portfolio_returns = np.dot(data, weights) * 252
-downside_risk = downside_deviation(portfolio_returns)
-sortino_ratio = (portfolio_return - risk_free_rate) / downside_risk
+# Sortino Ratio
+sortino_ratio = (portfolio_return - risk_free_rate) / mean_downside_std_dev
 
-weighted_volatility = np.dot(weights, std_devs)
-mean_diversification = weighted_volatility - portfolio_volatility
+# Mean Diversification
+individual_volatilities = np.sqrt(np.diag(daily_returns.cov() * 252))
+weighted_volatilities = np.dot(equal_weights, individual_volatilities)
+mean_diversification = weighted_volatilities / portfolio_volatility
 
-rolling_std_dev = pd.Series(portfolio_returns).rolling(window=30).std()
-mean_stability = 1 / rolling_std_dev.mean()
+# Mean Stability (using max drawdown)
+cumulative_returns = (1 + daily_returns).cumprod()
+peak = cumulative_returns.cummax()
+drawdown = (cumulative_returns - peak) / peak
+max_drawdown = drawdown.min().min()  # Min across time and assets
+mean_stability = 1 / abs(max_drawdown)  # Inverse of max drawdown
 
-
-print("Portfolio Return:", portfolio_return)
+# Output results
+print("Portfolio Expected Annual Return:", portfolio_return)
 print("Portfolio Volatility:", portfolio_volatility)
 print("Sharpe Ratio:", sharpe_ratio)
-print("Downside Risk:", downside_risk)
+print("Mean Downside Standard Deviation:", mean_downside_std_dev)
 print("Sortino Ratio:", sortino_ratio)
 print("Mean Diversification:", mean_diversification)
-print("Mean Stability:", mean_stability)
-
-
+print("Mean Stability (Inverse of Max Drawdown):", mean_stability)
