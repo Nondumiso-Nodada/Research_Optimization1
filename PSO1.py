@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import skew, kurtosis
+
 
 # Load the data
 def load_data(file_path):
@@ -71,7 +73,7 @@ config = {
 }
 num_particles = 30
 num_iterations = 100
-risk_free_rate = 0.06098
+risk_free_rate = 0.010163
 
 best_position, best_value = pso('esg6.xlsx', num_particles, num_iterations, config)
 best_volatility, best_return = portfolio_performance(best_position, load_data('esg6.xlsx'), load_data('esg6.xlsx').cov())
@@ -100,7 +102,7 @@ def calculate_downside_std(portfolio_returns):
         return 0
     return np.std(downside_returns) * np.sqrt(252)
 
-def calculate_sortino_ratio(portfolio_returns, annual_return, risk_free_rate=0.06098):
+def calculate_sortino_ratio(portfolio_returns, annual_return, risk_free_rate=0.010163):
     downside_std = calculate_downside_std(portfolio_returns)
     if downside_std == 0:
         return np.inf
@@ -126,3 +128,77 @@ print("Mean Downside Standard Deviation:", downside_std)
 print("Sortino Ratio:", sortino_ratio)
 print("Mean Diversification:", mean_diversification)
 print("Mean Stability (Max Drawdown):", max_drawdown)
+
+# Function to load data
+def load_data(file_path):
+    data = pd.read_excel('esg6.xlsx')
+    data.columns = data.columns.str.strip()
+    return data
+
+# Particle class definition
+class Particle:
+    def __init__(self, num_assets):
+        self.position = np.random.dirichlet(np.ones(num_assets), size=1).flatten()
+        self.velocity = np.zeros(num_assets)
+        self.best_position = np.copy(self.position)
+        self.best_value = float('inf')
+
+    def update_velocity(self, global_best_position, config):
+        inertia = config['inertia']
+        cognitive = config['cognitive']
+        social = config['social']
+        r1, r2 = np.random.random(), np.random.random()
+        cognitive_velocity = cognitive * r1 * (self.best_position - self.position)
+        social_velocity = social * r2 * (global_best_position - self.position)
+        self.velocity = inertia * self.velocity + cognitive_velocity + social_velocity
+
+    def update_position(self):
+        self.position += self.velocity
+        self.position = np.clip(self.position, 0, None)
+        self.position /= np.sum(self.position)
+
+# Function to calculate portfolio performance
+def portfolio_performance(weights, returns, cov_matrix):
+    portfolio_returns = np.dot(returns, weights)
+    returns_annual = portfolio_returns.mean() * 252
+    volatility_annual = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(252)
+    return returns_annual, volatility_annual, portfolio_returns
+
+# PSO Algorithm
+def pso(file_path, num_particles, num_iterations, config, risk_free_rate):
+    data = load_data(file_path)
+    cov_matrix = data.cov() * 252
+    global_best_position = None
+    global_best_value = float('inf')
+    particles = [Particle(data.shape[1]) for _ in range(num_particles)]
+
+    for _ in range(num_iterations):
+        for particle in particles:
+            returns_annual, volatility_annual, returns_series = portfolio_performance(particle.position, data, cov_matrix)
+            if volatility_annual < particle.best_value:
+                particle.best_value = volatility_annual
+                particle.best_position = particle.position
+            if volatility_annual < global_best_value:
+                global_best_value = volatility_annual
+                global_best_position = particle.position
+        for particle in particles:
+            particle.update_velocity(global_best_position, config)
+            particle.update_position()
+
+    # Calculate Modified Sharpe Ratio
+    best_returns_annual, best_volatility_annual, best_returns_series = portfolio_performance(global_best_position, data, cov_matrix)
+    best_skewness = skew(best_returns_series)
+    best_kurtosis = kurtosis(best_returns_series)
+    modified_sharpe_ratio = (best_returns_annual - risk_free_rate) / np.sqrt(best_volatility_annual**2 + best_skewness**2 + (best_kurtosis - 3)**2 / 4)
+
+    return modified_sharpe_ratio
+
+# Configuration and Execution
+config = {'inertia': 0.5, 'cognitive': 1.5, 'social': 1.5}
+num_particles = 30
+num_iterations = 100
+risk_free_rate = 0.010163
+
+# Run the PSO
+modified_sharpe = pso('esg6.xlsx', num_particles, num_iterations, config, risk_free_rate)
+print("Modified Sharpe Ratio:", modified_sharpe)

@@ -1,126 +1,121 @@
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
+from scipy.stats import sem
+from scipy.stats import skew, kurtosis
 
 
-data = pd.read_excel('Book6.xlsx', skiprows=[0], index_col=0)  # Adjust for your actual data source
-print(data)
-
-# Clean the column names by stripping any spaces
+# Load your data
+data = pd.read_excel('esg6.xlsx')  # Update this path to your actual file path
 data.columns = data.columns.str.strip()
+data.replace([np.inf, -np.inf], np.nan, inplace=True)  # Replace infinities
+data.dropna(inplace=True)  # Drop rows with any NaN values
 
-# Calculate the average returns for each asset
-average_returns = data.mean()
+# Annualize the daily returns
+annual_returns = data.mean() * 252
 
-# Calculate the standard deviation for each asset
-std_devs = data.std()
+# Calculate the covariance matrix, annualized
+cov_matrix = data.cov() * 252
+if np.isinf(cov_matrix.values).any() or np.isnan(cov_matrix.values).any():
+    raise ValueError("Covariance matrix contains NaN or infinite values.")
 
-# Calculate the covariance matrix of the asset returns
-cov_matrix = data.cov()
-
-# Risk-free rate assumption for Sharpe Ratio calculation
-risk_free_rate = 0.06098
-
-# Number of assets
-num_assets = len(data.columns)
-
-# Function to calculate portfolio returns, volatility, and Sharpe ratio
-def portfolio_performance(weights, average_returns, cov_matrix, risk_free_rate):
-    returns = np.dot(weights, average_returns) * 252
-    volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    sharpe_ratio = (returns - risk_free_rate) / volatility
-    return returns, volatility, sharpe_ratio
-
-# Objective function to minimize (negative Sharpe Ratio)
-def min_sharpe_ratio(weights, average_returns, cov_matrix, risk_free_rate):
-    return -portfolio_performance(weights, average_returns, cov_matrix, risk_free_rate)[2]
-
-# Constraints: weights sum to 1
-constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-
-# Bounds for each weight
-bounds = tuple((0, 1) for asset in range(num_assets))
-
-# Initial guess: equal weight for all assets
-initial_guess = num_assets * [1. / num_assets]
-
-# Optimization to find the optimal asset weights
-opt_results = minimize(min_sharpe_ratio, initial_guess, args=(average_returns, cov_matrix, risk_free_rate),
-                       method='SLSQP', bounds=bounds, constraints=constraints)
-
-optimal_weights = opt_results.x
-portfolio_returns, portfolio_volatility, portfolio_sharpe_ratio = portfolio_performance(optimal_weights, average_returns, cov_matrix, risk_free_rate)
-
-# Display results
-print("Optimal Weights:\n", optimal_weights)
-print("Expected Portfolio Return:", portfolio_returns)
-print("Portfolio Volatility:", portfolio_volatility)
-print("Portfolio Sharpe Ratio:", portfolio_sharpe_ratio)
-
-
-# Function to calculate downside deviation
-def downside_deviation(returns, target=0):
-    return np.sqrt(np.mean(np.minimum(0, returns - target) ** 2))
-
-# Extend portfolio performance function to include Sortino Ratio calculation
-def extended_portfolio_performance(weights, average_returns, cov_matrix, data, risk_free_rate=0.06098, target=0):
-    portfolio_returns = np.dot(data, weights) * 252
-    mean_return = np.mean(portfolio_returns) * 252
-    total_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    downside_risk = downside_deviation(portfolio_returns, target)
-    sortino_ratio = (mean_return - risk_free_rate) / downside_risk if downside_risk > 0 else np.inf
-    return mean_return, total_volatility, downside_risk, sortino_ratio
-
-# Calculate the mean diversification (optional definition)
-def mean_diversification(weights, std_devs):
-    # Weighted average volatility
-    weighted_volatility = np.dot(weights, std_devs)
-    # Portfolio volatility
-    portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    return weighted_volatility - portfolio_volatility
-
-# Calculate diversification and Sortino ratio
-mean_div = mean_diversification(optimal_weights, std_devs)
-portfolio_mean_return, portfolio_volatility, portfolio_downside_risk, portfolio_sortino_ratio = extended_portfolio_performance(optimal_weights, average_returns, cov_matrix, data)
-
-
+# Risk-free rate
+risk_free_rate = 0.010163
 
 # Number of assets
 num_assets = len(data.columns)
 
-# Portfolio performance function including downside deviation
-def portfolio_performance(weights, data, cov_matrix, risk_free_rate=0.06098):
-    portfolio_returns = np.dot(data, weights) * 252
-    mean_return = np.mean(portfolio_returns) * 252
-    volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    downside_risk = np.sqrt(np.mean(np.minimum(0, portfolio_returns - risk_free_rate) ** 2))
-    sortino_ratio = (mean_return - risk_free_rate) / downside_risk if downside_risk > 0 else np.inf
-    return portfolio_returns, mean_return, volatility, downside_risk, sortino_ratio
+# Functions for portfolio metrics
+def portfolio_return(weights):
+    return np.dot(weights, annual_returns)
 
-# Minimize negative Sortino ratio
-def min_sortino_ratio(weights, data, cov_matrix, risk_free_rate):
-    return -portfolio_performance(weights, data, cov_matrix, risk_free_rate)[4]
+def portfolio_volatility(weights):
+    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
 
-# Optimization constraints and bounds
-constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+def sortino_ratio(weights):
+    p_return = portfolio_return(weights)
+    negative_returns = data[data < 0].fillna(0)
+    dd = np.sqrt(np.dot(weights.T, np.dot(negative_returns.cov() * 252, weights)))
+    return (p_return - risk_free_rate) / dd
+
+def diversification_ratio(weights):
+    weighted_volatilities = np.dot(weights, np.sqrt(np.diag(cov_matrix)))
+    portfolio_vol = portfolio_volatility(weights)
+    return weighted_volatilities / portfolio_vol
+
+# Constraints and bounds
+constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
 bounds = tuple((0, 1) for asset in range(num_assets))
-initial_guess = num_assets * [1. / num_assets]
+initial_weights = np.array(num_assets * [1. / num_assets])
 
-# Optimize portfolio
-opt_results = minimize(min_sortino_ratio, initial_guess, args=(data, cov_matrix, risk_free_rate),
-                       method='SLSQP', bounds=bounds, constraints=constraints)
+# Optimization to minimize volatility
+opt_results = minimize(portfolio_volatility, initial_weights, method='SLSQP', bounds=bounds, constraints=constraints)
+if not opt_results.success:
+    raise BaseException(opt_results.message)
+
 optimal_weights = opt_results.x
 
-# Evaluate portfolio
-portfolio_returns, mean_return, volatility, downside_risk, sortino_ratio = portfolio_performance(optimal_weights, data, cov_matrix)
+# Calculations
+optimal_volatility = portfolio_volatility(optimal_weights)
+optimal_return = portfolio_return(optimal_weights)
+sharpe_ratio = (optimal_return - risk_free_rate) / optimal_volatility
+sortino_ratio_value = sortino_ratio(optimal_weights)
+div_ratio = diversification_ratio(optimal_weights)
 
-# Calculate rolling standard deviation (e.g., monthly if data is daily)
-rolling_std_dev = pd.Series(portfolio_returns).rolling(window=30).std()  # Adjust window size based on data frequency
-mean_stability = 1 / rolling_std_dev.mean()  # Inverse of the mean of the rolling standard deviations
+print("Optimal weights:", optimal_weights)
+print("Minimum Portfolio Volatility:", optimal_volatility)
+print("Annual Expected Return:", optimal_return)
+print("Sharpe Ratio:", sharpe_ratio)
+print("Sortino Ratio:", sortino_ratio_value)
+print("Diversification Ratio:", div_ratio)
 
 
-# Display additional results
-print("Mean Diversification:", mean_div)
-print("Downside Risk:", portfolio_downside_risk)
-print("Sortino Ratio:", portfolio_sortino_ratio)
-print("Mean Stability:", mean_stability)
+# Portfolio metrics functions
+def portfolio_return(weights):
+    return np.dot(weights, annual_returns)
+
+def portfolio_volatility(weights):
+    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+
+def downside_std_dev(weights):
+    negative_returns = data[data < 0].fillna(0)
+    return np.sqrt(np.dot(weights.T, np.dot(negative_returns.cov() * 252, weights)))
+
+def max_drawdown(returns_series):
+    cumulative_returns = (1 + returns_series).cumprod()
+    peak = cumulative_returns.cummax()
+    drawdown = (cumulative_returns - peak) / peak
+    return drawdown.min()
+
+# Constraints and bounds for optimization
+constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
+bounds = tuple((0, 1) for asset in range(num_assets))
+initial_weights = np.array(num_assets * [1. / num_assets])
+
+# Minimize volatility
+opt_results = minimize(portfolio_volatility, initial_weights, method='SLSQP', bounds=bounds, constraints=constraints)
+optimal_weights = opt_results.x
+
+# Calculate metrics
+optimal_volatility = portfolio_volatility(optimal_weights)
+optimal_return = portfolio_return(optimal_weights)
+portfolio_daily_returns = np.sum(data * optimal_weights, axis=1)
+mean_downside_deviation = downside_std_dev(optimal_weights)
+mean_stability_ratio = 1 / -max_drawdown(portfolio_daily_returns)
+
+
+print("Mean Downside Standard Deviation:", mean_downside_deviation)
+print("Mean Stability Ratio (Inverse of Max Drawdown):", mean_stability_ratio)
+
+# After finding the optimal weights, calculate the Modified Sharpe Ratio
+optimal_weights = opt_results.x
+optimal_portfolio_returns = np.dot(data - risk_free_rate, optimal_weights)  # Excess returns
+annual_excess_return = np.mean(optimal_portfolio_returns) * 252
+portfolio_skewness = skew(optimal_portfolio_returns)
+portfolio_kurtosis = kurtosis(optimal_portfolio_returns)
+
+# Calculate the Modified Sharpe Ratio
+portfolio_variance = optimal_volatility ** 2
+modified_sharpe_ratio = annual_excess_return / np.sqrt(portfolio_variance + portfolio_skewness**2 + (portfolio_kurtosis - 3)**2 / 4)
+
+print("Modified Sharpe Ratio:", modified_sharpe_ratio)
