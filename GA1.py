@@ -5,9 +5,9 @@ from scipy.stats import skew, kurtosis
 
 # Load data
 def load_data(filepath):
-    data = pd.read_excel('esg6.xlsx')
+    data = pd.read_excel('Invest3.xlsx')
     return data
-risk_free_rate = 0.010163
+risk_free_rate = 0.019806
 
 
 # Portfolio performance
@@ -104,7 +104,7 @@ num_parents = 20  # Number of parents to select for mating
 mutation_rate = 0.01  # Mutation rate
 
 # Run the optimization
-filepath = 'esg6.xlsx'  # Replace with the correct path to your Excel file
+filepath = 'Invest3.xlsx'  # Replace with the correct path to your Excel file
 best_weights, best_risk = genetic_algorithm_optimize_risk(
     filepath, num_generations, population_size, num_parents, mutation_rate
 )
@@ -112,7 +112,7 @@ best_weights, best_risk = genetic_algorithm_optimize_risk(
 # Function to calculate portfolio's annual expected return
 def annual_expected_return(weights, mean_returns):
     return np.sum(mean_returns * weights)
-data = load_data('esg6.xlsx')
+data = load_data('Invest3.xlsx')
 returns = data
 cov_matrix = returns.cov()
 
@@ -165,6 +165,21 @@ diversification = mean_diversification(best_weights, individual_stds)
 portfolio_cumulative_returns = (1 + np.dot(returns, best_weights)).cumprod()
 stability = max_drawdown(portfolio_cumulative_returns)
 
+# Function to calculate the modified Sharpe ratio with absolute values
+def modified_sharpe_ratio_with_absolute_values(portfolio_return, portfolio_volatility, risk_free_rate):
+    abs_portfolio_return = np.abs(portfolio_return - risk_free_rate)
+    portfolio_ratio = (portfolio_return - risk_free_rate) / abs_portfolio_return
+
+    if portfolio_volatility != 0:  # Avoid division by zero
+        modified_sharpe = (portfolio_return - risk_free_rate) / (portfolio_volatility ** portfolio_ratio)
+    else:
+        modified_sharpe = np.inf  # Handle case where standard deviation is zero
+
+    return modified_sharpe
+
+# Calculate the modified Sharpe ratio with absolute values
+modified_sharpe = modified_sharpe_ratio_with_absolute_values(annual_ret, portfolio_std_dev, risk_free_rate)
+
 # Print the calculated metrics
 print(f"Optimized Weights: {best_weights}")
 print(f"Annual Expected Return: {annual_ret}")
@@ -174,81 +189,6 @@ print(f"Downside Standard Deviation: {downside_std}")
 print(f"Sortino Ratio: {sortino}")
 print(f"Mean Diversification Ratio: {diversification}")
 print(f"Mean Stability (Max Drawdown): {stability}")
+print(f"Modified Sharpe Ratio (with Absolute Values): {modified_sharpe}")
 
 
-# Load data
-def load_data(filepath):
-    data = pd.read_excel('esg6.xlsx')
-    return data
-
-# Initialize population with random weights
-def initialize_population(num_individuals, num_assets):
-    population = np.random.rand(num_individuals, num_assets)
-    population /= np.sum(population, axis=1)[:, None]  # Normalize weights
-    return population
-
-# Calculate portfolio standard deviation
-def portfolio_std(weights, returns, cov_matrix):
-    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-
-# Genetic Algorithm for optimizing Modified Sharpe Ratio
-def genetic_algorithm(filepath, num_generations, population_size, num_parents, mutation_rate, risk_free_rate):
-    returns = load_data(filepath)
-    cov_matrix = returns.cov()
-    mean_returns = returns.mean()
-
-    population = initialize_population(population_size, len(returns.columns))
-
-    for generation in range(num_generations):
-        # Calculate performance metrics for each individual
-        metrics = np.array([portfolio_metrics(ind, returns, mean_returns, cov_matrix, risk_free_rate) for ind in population])
-        std_devs = metrics[:, 0]
-        sharpe_ratios = metrics[:, 1]
-        modified_sharpe_ratios = metrics[:, 2]
-
-        # Select parents based on Modified Sharpe Ratio
-        parents = select_parents(population, modified_sharpe_ratios, num_parents)
-
-        # Crossover and mutation
-        num_offspring = population_size - len(parents)
-        offspring = crossover(parents, num_offspring)
-        offspring = mutate(offspring, mutation_rate)
-
-        # Create new generation
-        population[:len(parents)] = parents
-        population[len(parents):] = offspring
-
-        if generation % 10 == 0:
-            print(f"Generation {generation}: Best Modified Sharpe Ratio: {np.max(modified_sharpe_ratios)}")
-
-    # Best solution
-    best_index = np.argmax(modified_sharpe_ratios)
-    best_solution = population[best_index]
-    best_metrics = metrics[best_index]
-
-    return best_solution, best_metrics
-
-# Portfolio metrics calculation including Modified Sharpe Ratio
-def portfolio_metrics(weights, returns, mean_returns, cov_matrix, risk_free_rate):
-    annual_return = np.dot(weights, mean_returns) * 252
-    volatility = portfolio_std(weights, returns, cov_matrix)
-    portfolio_returns = np.dot(returns, weights)
-    skewness = skew(portfolio_returns)
-    kurt = kurtosis(portfolio_returns)
-
-    sharpe_ratio = (annual_return - risk_free_rate) / volatility if volatility != 0 else 0
-    modified_sharpe_ratio = (annual_return - risk_free_rate) / np.sqrt(volatility**2 + skewness**2 + (kurt-3)**2 / 4)
-
-    return volatility, sharpe_ratio, modified_sharpe_ratio
-
-# Genetic Algorithm parameters and execution
-risk_free_rate = 0.010163
-num_generations = 100
-population_size = 50
-num_parents = 20
-mutation_rate = 0.01
-filepath = 'esg6.xlsx'
-
-best_weights, best_metrics = genetic_algorithm(filepath, num_generations, population_size, num_parents, mutation_rate, risk_free_rate)
-
-print("Modified Sharpe Ratio:", best_metrics[2])
