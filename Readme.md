@@ -3,6 +3,9 @@ market, using traditional (mean-variance, naïve/equally weighting and risk pari
 optimisation, simulated annealing and genetic algorithm). Portfolios are constructed using inputs 
 from estimation windows and compared in terms of risk-adjusted returns, diversification and 
 stability based on out-of-sample investment windows. 
+For the purposes of this study, 40 constituents of the J113 FTSE/JSE Responsible Index 
+as at January 2024 are utilised as the assets for the construction of the SRI portfolio as 
+these have already been screened based on their ESG scores, and for the non-SRI portfolios the JSE top 40 assets were used.
 Using python to develop both traditional and the AI models.
 AI algorithms produced optimal SRI portfolios with higher risk-adjusted returns on average. In a 
 period of positive market returns, the genetic algorithm performed best, followed by simulated 
